@@ -1,7 +1,22 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/vadymbarabanov/scrapper/account"
+)
 
 func main() {
-	fmt.Println("Hello world!")
+	newAcc := account.CreateAccount("lynn")
+	fmt.Println(newAcc)
+
+	newAcc.Deposit(30)
+
+	err := newAcc.Withdraw(10)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	newAcc.ChangeOwner("bob")
+	fmt.Println(newAcc)
 }
