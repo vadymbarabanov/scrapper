@@ -26,14 +26,47 @@ var baseURL string = "https://kr.indeed.com/jobs?q=python&limit=50"
 
 func main() {
 	jobs := []job{}
+	c := make(chan []job)
 	totalPages := getPagesCount()
 
 	for i := 0; i < totalPages; i++ {
-		jobs = append(jobs, getPage(i)...)
+		go getPage(i, c)
+	}
+
+	for i := 0; i < totalPages; i++ {
+		extractedJobs := <-c
+		jobs = append(jobs, extractedJobs...)
 	}
 
 	writeJobs(jobs)
 	fmt.Println("Done! Extracted:", len(jobs), "jobs")
+}
+
+func getPage(pageNumber int, mainC chan<- []job) {
+	pageURL := baseURL + "&start=" + strconv.Itoa(pageNumber*50)
+	fmt.Println("Requesting:", pageURL)
+	res, err := http.Get(pageURL)
+	checkErr(err)
+	checkCode(res)
+
+	defer res.Body.Close()
+
+	doc, err := goquery.NewDocumentFromReader(res.Body)
+	checkErr(err)
+
+	c := make(chan job)
+	result := []job{}
+
+	pages := doc.Find(".result")
+	pages.Each(func(i int, card *goquery.Selection) {
+		go extractJob(card, c)
+	})
+
+	for i := 0; i < pages.Length(); i++ {
+		result = append(result, <-c)
+	}
+
+	mainC <- result
 }
 
 func writeJobs(jobs []job) {
@@ -59,26 +92,7 @@ func writeJobs(jobs []job) {
 	}
 }
 
-func getPage(pageNumber int) []job {
-	pageURL := baseURL + "&start=" + strconv.Itoa(pageNumber*50)
-	res, err := http.Get(pageURL)
-	checkErr(err)
-	checkCode(res)
-
-	defer res.Body.Close()
-
-	doc, err := goquery.NewDocumentFromReader(res.Body)
-	checkErr(err)
-
-	result := []job{}
-	doc.Find(".result").Each(func(i int, card *goquery.Selection) {
-		result = append(result, extractJob(card))
-	})
-
-	return result
-}
-
-func extractJob(card *goquery.Selection) job {
+func extractJob(card *goquery.Selection, c chan<- job) {
 	id, _ := card.Attr("data-jk")
 	title := clearStr(card.Find(".jobTitle").Text())
 	salary := clearStr(card.Find(".salary-snippet").Text())
@@ -86,7 +100,7 @@ func extractJob(card *goquery.Selection) job {
 	companyLocation := clearStr(card.Find(".companyLocation").Text())
 	companyName := clearStr(card.Find(".companyName").Text())
 
-	return job{
+	c <- job{
 		id:              id,
 		title:           title,
 		salary:          salary,
